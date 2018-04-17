@@ -3,26 +3,29 @@
 #include <Adafruit_PCD8544.h>
 #include <TimerThree.h>
 
+#define DC_display 6
+#define CS_display 7
+#define reset_display 8
 #define enable_bridge 9
 #define motor_pos 10
 #define motor_neg 11
 #define clk_display 52
 #define DIN_display 51
-#define DC_display 6
-#define CS_display 7
-#define reset_display 8
 #define interruptPin 21
+#define initialSpeed 0
+#define targetSpdMin 15
 
 String command[5] = {"VEL", "VENT", "EXAUST", "PARA", "RETVEL"}, reading = "", reading_aux = "", arg = "";
-int i, velocity = 0, count = 0, speed_measured = 0, timer = 0;
-char reading_end = 0, flag_vel = 0, aux = 0, state_new = 0, state_old = 0;
+int i, speed_target = 0, count = 0, speed_measured = 0, timer = 0;
+char reading_end = 0, aux = 0, state_new = 0, state_old = 0;
 volatile const long int TIMER_BASE = 250; // base de tempo
 Adafruit_PCD8544 display = Adafruit_PCD8544(DC_display, CS_display, reset_display); //criacao do objeto display
 
 void initEncoder() {
   Timer3.initialize(TIMER_BASE * 1000); //tempo em us
   Timer3.attachInterrupt(cronometer);
- // attachInterrupt(digitalPinToInterrupt(interruptPin), readEncoder, RISING);
+  pinMode(interruptPin, INPUT);
+  attachInterrupt(digitalPinToInterrupt(interruptPin), readEncoder, FALLING);
 }
 
 void initDisplay() {
@@ -44,45 +47,49 @@ void initMotor() {
   pinMode(motor_neg, OUTPUT);
   digitalWrite(motor_pos, HIGH);
   digitalWrite(motor_neg, LOW);
-  // analogWrite(enable_bridge, 0);
+  analogWrite(enable_bridge, initialSpeed);
 }
 
 void initBluetooth() {
   Serial3.begin(9600);
   Serial.begin(9600);
-  Serial.println("Pronto :");
 }
 
 void cronometer() {
-  speed_measured = count / 30;
+  // velocidade = ((encoder / pás) / tempo) * 60 segundos = ((encoder / 2) / 0.25) * 60 segundos
+  speed_measured = count * 120;
   count = 0;
   timer++;
 }
+
 void readEncoder() {
   count++;
 }
 
 void bluetoothRead() {
+  static char _flagVel = 0;
+
   if (Serial3.available()) {
     aux = Serial3.read();
     if (aux == ' ') {
       reading = String(reading_aux);
       reading_aux = "";
-      flag_vel = 1;
+      _flagVel = 1;
+
     } else if (aux != '*') {
       reading_aux = String(reading_aux + aux);
+
     } else {
       arg = "AUS";
-      if (!flag_vel) {
+      if (!_flagVel) {
         reading = String(reading_aux);
       } else {
         arg = String(reading_aux);
       }
+
       reading_aux = "";
-      flag_vel = 0;
+      _flagVel = 0;
       reading_end = 1;
-      Serial.println(reading);
-      Serial.println(arg);
     }
   }
 }
@@ -92,6 +99,7 @@ void compareString() {
     if (reading.equalsIgnoreCase(command[i]))
       break;
   }
+
   switch (i) {
       Serial.println(i);
     case 0:
@@ -100,39 +108,42 @@ void compareString() {
         break;
       }
 
-      velocity = arg.toInt();
-
-      if (velocity < 0 || velocity > 100)
+      if (arg.toInt() < 0 || arg.toInt() > 100) {
         Serial.println("ERRO: PARÂMETRO INCORRETO");
+        break;
+      }
 
-      analogWrite(enable_bridge, (velocity * 255 / 100));
-      digitalWrite(motor_pos, HIGH);
-      digitalWrite(motor_neg, LOW);
+      speed_target = arg.toInt();
+
+      analogWrite(enable_bridge, (convSpd(speed_target)) * 255 / 100 ); //
+      Serial.println(convSpd(speed_target));
+
+      if (state_old == 2) {
+        state_new = 0;
+      }
       Serial.print("OK VEL ");
       Serial.println(arg);
       break;
 
     case 1:
-      /*if (!(motor_pos == HIGH || motor_neg == LOW)) {
-        digitalWrite(motor_pos, HIGH);
-        digitalWrite(motor_neg, HIGH);
-        }*/
       state_new = 0;
+      stopBridge();
       Serial.println("OK VENT");
       break;
     case 2:
-      /*      if (!(motor_pos == LOW || motor_neg =+ HIGH)) {
-              digitalWrite(motor_pos, HIGH);
-              digitalWrite(motor_neg, HIGH);
-            }*/
       state_new = 1;
+      stopBridge();
       Serial.println("OK EXAUST");
       break;
     case 3:
       state_new = 2;
+      stopBridge();
       Serial.println("OK PARA");
       break;
     case 4:
+      Serial.print("VEL: ");
+      Serial.print(String(speed_measured));
+      Serial.println(" RPM");
       break;
     case 5:
       Serial.println("ERRO: COMANDO INEXISTENTE");
@@ -143,28 +154,39 @@ void compareString() {
   attDisplay();
 }
 
+int convSpd(int _target) {
+  return (_target * (100 - targetSpdMin) / 100 + targetSpdMin);
+}
+
+void stopBridge() {
+  if (state_new != state_old) {
+    digitalWrite(motor_pos, HIGH);
+    digitalWrite(motor_neg, HIGH);
+  }
+}
+
 void attDisplay() {
   display.clearDisplay();
 
   display.setCursor(4, 0);
   display.print("VEL. %: ");
-  display.println(arg);
+  display.println(String(speed_target));
 
-  if (state_new == 0) {
+  if (state_old == 0) {
     display.setCursor(4, 10);
     display.println("VENTILADOR");
-  } else if (state_new == 1) {
+  } else if (state_old == 1) {
     display.setCursor(4, 10);
     display.println("EXAUSTOR");
   } else {
     display.setCursor(4, 10);
     display.println("PARADO");
   }
-  
+
   display.setCursor(4, 20);
   display.println("VEL. ATUAL: ");
   display.setCursor(15, 30);
-  display.print(arg);
+  display.print(String(speed_measured));
   display.println(" RPM");
 
   display.display();
@@ -175,22 +197,17 @@ void setup() {
   initDisplay();
   initMotor();
   initEncoder();
-  //pinMode(51,OUTPUT);
-  //pinMode(52,OUTPUT);
-  //Adafruit_PCD8544 display = Adafruit_PCD8544(5, 4, 3);
-  //display.begin();
-
+  attDisplay();
 }
 
 void loop() {
   bluetoothRead();
+
   if (reading_end)
     compareString();
-  if ((timer % 4)==0) {
-    //display.print(speed_measure);
-    //display.display();
-    attDisplay;
-  }
+
+  if ((timer % 6) == 0)
+    attDisplay();
 
   if (state_new != state_old && speed_measured == 0) {
     if (state_new == 0) {
@@ -199,9 +216,9 @@ void loop() {
     } else if (state_new == 1) {
       digitalWrite(motor_pos, LOW);
       digitalWrite(motor_neg, HIGH);
-    } else {
-      digitalWrite(motor_pos, HIGH);
-      digitalWrite(motor_neg, HIGH);
+    } else if (state_new == 2) {
+      speed_target = 0;
+      analogWrite(enable_bridge, 0);
     }
     state_old = state_new;
   }
