@@ -81,6 +81,27 @@ int poolingKey(int _linha) {
   return 3;
 }
 
+int usedSpace() {
+  int aux[2], _i = 0;
+  Wire.beginTransmission(0b0001010111); // transmit to 24C16 (e paginacao 111)
+  Wire.write(0xFD);
+  Wire.endTransmission();
+
+  Wire.requestFrom(0b0001010111, 2);
+
+    if (Wire.available()) {
+      aux[] = Wire.read();    // receive a byte as character
+    }
+  
+
+    Serial.println(aux[0]);
+   Serial.println(aux[1]);
+
+  return (2 * (256 * aux[0] + aux[1]));
+}
+
+// ------------------------------------------------------------------------------
+
 void setup() {
   Wire.begin();
   Serial.begin(9600);
@@ -92,24 +113,12 @@ void setup() {
   Timer3.attachInterrupt(cronometro);
 
   dataloggerState = OCIOSO;
-}
-
-int usedSpace(){
-  Wire.beginTransmission(0b0001010111); // transmit to 24C16 (e paginacao 111)
-  Wire.write(0xFE);
-  Wire.endTransmission();
-  
-  Wire.requestFrom(0b0001010000,2);
-  
-  while(Wire.available())    // slave may send less than requested
-  { 
-    char c = Wire.read();    // receive a byte as character
-    Serial.print(c);         // print the character
-  }
+  analogReference(INTERNAL1V1);
 }
 
 void loop() {
   int _coluna = 3, _linha = 4;
+  int teste;
 
   // Leitura e debouncing do teclado matricial
   for (_linha = 0; _linha < 4; _linha ++) {
@@ -132,34 +141,58 @@ void loop() {
 
   buttonStateOld = buttonStateReading;
 
+  teste = 1;
 
-  // Maquina de estados do datalogger
-  
-  switch (dataloggerState) {
-    case OCIOSO  
-        break;
-    case MEASURE
-        break;
-    case STATUS
-        break;
-    case SAMPLING
-        break;
-    case TRANFERING
-        break;
+  if (buttonStateNew == 1) {
+    Wire.beginTransmission(0b1010111); // transmit to 24C16 (e paginacao 111)
+    Wire.write(0xFD);
+    Wire.write(0xFF);
+    Wire.endTransmission();
   }
 
+  Wire.beginTransmission(0b1010111); // transmit to 24C16 (e paginacao 111)
+  Wire.write(0xFD);
+  Wire.endTransmission();
 
+  //Wire.requestFrom(0b1010111);
 
+  usedSpace();
+
+  //Serial.println(buttonStateNew);
+  //Serial.println(teste);
+  Serial.println("--------------");
+
+  /*
+    teste0 = analogRead(A0);
+    teste0 = teste0 * 1100;
+    teste1 = teste0 / 10;
+    Serial.println(teste1);
+  */
+  // Maquina de estados do datalogger
+  /*
+    switch (dataloggerState) {
+      case OCIOSO
+          break;
+      case MEASURE
+          break;
+      case STATUS
+          break;
+      case SAMPLING
+          break;
+      case TRANFERING
+          break;
+    }
+  */
   delay(1000);
 
-   
-  
-  Wire.beginTransmission(0b0001010000); // transmit to 24C16
-  Wire.write("x is ");        // sends five bytes
-  Wire.write(x);              // sends one byte
-  Wire.endTransmission();    // stop transmitting
+  /*
 
-  x++;
-  delay(500);
+    Wire.beginTransmission(0b0001010000); // transmit to 24C16
+    Wire.write("x is ");        // sends five bytes
+    Wire.write(x);              // sends one byte
+    Wire.endTransmission();    // stop transmitting
 
+    x++;
+    delay(500);
+  */
 }
