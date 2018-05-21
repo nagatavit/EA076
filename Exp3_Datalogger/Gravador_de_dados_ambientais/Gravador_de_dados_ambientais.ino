@@ -24,7 +24,8 @@
 int linVect[4] = {keyPinL1, keyPinL2, keyPinL3, keyPinL4};
 int colVect[3] = {keyPinC1, keyPinC2, keyPinC3};
 char keyValue[4][3] = {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}, {10, 11, 12}};
-enum {NULO, RESET, MEASURE, STATUS, INIT_MEAS, END_MEAS, TRANSFER, SETE, OITO, NOVE, CONFIRMA, ZERO, CANCELA} keypadState;
+//enum {NULO, RESET, MEASURE, STATUS, INIT_MEAS, END_MEAS, TRANSFER, SETE, OITO, NOVE, CONFIRMA, ZERO, CANCELA} keypadState;
+enum {OCIOSO, MEASURE, STATUS, SAMPLING, TRANFERING} dataloggerState;
 
 //
 int count = 0, debounceTime;
@@ -90,14 +91,27 @@ void setup() {
   Timer3.initialize(BASE_TEMPO_TIMER * 1000); //tempo em us
   Timer3.attachInterrupt(cronometro);
 
-  keypadState = NULO;
+  dataloggerState = OCIOSO;
+}
+
+int usedSpace(){
+  Wire.beginTransmission(0b0001010111); // transmit to 24C16 (e paginacao 111)
+  Wire.write(0xFE);
+  Wire.endTransmission();
+  
+  Wire.requestFrom(0b0001010000,2);
+  
+  while(Wire.available())    // slave may send less than requested
+  { 
+    char c = Wire.read();    // receive a byte as character
+    Serial.print(c);         // print the character
+  }
 }
 
 void loop() {
   int _coluna = 3, _linha = 4;
 
   // Leitura e debouncing do teclado matricial
-
   for (_linha = 0; _linha < 4; _linha ++) {
     _coluna = poolingKey(_linha);
     if (_coluna < 3)
@@ -118,47 +132,28 @@ void loop() {
 
   buttonStateOld = buttonStateReading;
 
-  switch (buttonStateNew) {
-    case 1
-        keypadState = RESET;
-      break;
-    case 2
-        keypadState = MEASURE;
-      break;
-    case 3
-        keypadState = STATUS;
-      break;
-    case 4
-        keypadState = INIT_MEAS;
-      break;
-    case 5
-        keypadState = END_MEAS;
-      break;
-    case 6
-        keypadState = TRANSFER;
-      break;
-    case 10
-        keypadState = CONFIRMA;
-      break;
-    case 12
-        keypadState = CANCELA;
-      break;
-  }
 
-  switch (keypadState) {
-    case NULO
-
-
+  // Maquina de estados do datalogger
+  
+  switch (dataloggerState) {
+    case OCIOSO  
         break;
-
-    case
-
+    case MEASURE
+        break;
+    case STATUS
+        break;
+    case SAMPLING
+        break;
+    case TRANFERING
         break;
   }
+
 
 
   delay(1000);
 
+   
+  
   Wire.beginTransmission(0b0001010000); // transmit to 24C16
   Wire.write("x is ");        // sends five bytes
   Wire.write(x);              // sends one byte
