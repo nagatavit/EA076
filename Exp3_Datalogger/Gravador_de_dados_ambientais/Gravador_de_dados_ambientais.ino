@@ -28,11 +28,19 @@ char keyValue[4][3] = {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}, {10, 11, 12}};
 enum {OCIOSO, MEASURE, STATUS, SAMPLING, TRANFERING} dataloggerState;
 
 //
-int count = 0, debounceTime;
-int buttonStateReading = 0, buttonStateOld = 0, buttonStateNew = 0;
+char flagTimer = 0;
+int count = 0;
 volatile unsigned const long int BASE_TEMPO_TIMER = 50; // base de tempo para calculo de delays (50 ms)
 byte palavra;
 Adafruit_PCD8544 display = Adafruit_PCD8544(DC_display, CS_display, reset_display); //criacao do objeto display
+
+// ----------------------------------
+//          INICIALIZACOES
+// ----------------------------------
+
+/*
+ * Inicializacao do display NOKIA 5110
+ */
 
 void initDisplay() {
   pinMode(clk_display, OUTPUT);
@@ -47,9 +55,9 @@ void initDisplay() {
   display.setTextSize(1); //tamanho das letras na tela
 }
 
-void cronometro() {
-  count++;
-}
+/*
+ * Inicializacao do teclado matricial
+ */
 
 void initKeyboard() {
   pinMode(keyPinC1, INPUT);
@@ -66,7 +74,26 @@ void initKeyboard() {
   digitalWrite(keyPinL4, HIGH);
 }
 
-int poolingKey(int _linha) {
+// ----------------------------------
+//         FUNCOES AUXILIARES
+// ----------------------------------
+
+/*
+ * Funcao de contagem por interrupcao
+ */
+
+void cronometro() {
+  count++;
+  if((count%20)== 0){
+    flagTimer = 1;
+  }
+}
+
+/*
+ * Pooling de leitura do teclado matricial
+ */
+
+int poolingCollums(int _linha) {
   int _coluna;
 
   digitalWrite(linVect[_linha], LOW);
@@ -81,48 +108,17 @@ int poolingKey(int _linha) {
   return 3;
 }
 
-int usedSpace() {
-  int aux[2], _i = 0;
-  Wire.beginTransmission(0b0001010111); // transmit to 24C16 (e paginacao 111)
-  Wire.write(0xFD);
-  Wire.endTransmission();
+/*
+ * Leitura e debounce do teclado matricial
+ */
 
-  Wire.requestFrom(0b0001010111, 2);
-
-    if (Wire.available()) {
-      aux[] = Wire.read();    // receive a byte as character
-    }
-  
-
-    Serial.println(aux[0]);
-   Serial.println(aux[1]);
-
-  return (2 * (256 * aux[0] + aux[1]));
-}
-
-// ------------------------------------------------------------------------------
-
-void setup() {
-  Wire.begin();
-  Serial.begin(9600);
-  initDisplay();
-  initKeyboard();
-
-  // Contador para interrupcao: base de tempo de 50 ms
-  Timer3.initialize(BASE_TEMPO_TIMER * 1000); //tempo em us
-  Timer3.attachInterrupt(cronometro);
-
-  dataloggerState = OCIOSO;
-  analogReference(INTERNAL1V1);
-}
-
-void loop() {
+int poolingLines(){
   int _coluna = 3, _linha = 4;
-  int teste;
+  static int buttonStateReading = 0, buttonStateOld = 0, buttonStateNew = 0;
+  static int debounceTime;
 
-  // Leitura e debouncing do teclado matricial
   for (_linha = 0; _linha < 4; _linha ++) {
-    _coluna = poolingKey(_linha);
+    _coluna = poolingCollums(_linha);
     if (_coluna < 3)
       break;
   }
@@ -141,26 +137,91 @@ void loop() {
 
   buttonStateOld = buttonStateReading;
 
-  teste = 1;
+  return(buttonStateNew);
+}
 
-  if (buttonStateNew == 1) {
+/*
+ * Funcao de retorno da memoria usada no 
+ */
+
+int usedSpace() {
+  unsigned int aux[2], _i = 0;
+  
+  Wire.beginTransmission(0b1010111); // transmit to 24C16 (e paginacao 111)
+  Wire.write(0xFE);
+  Wire.endTransmission();
+
+  Wire.requestFrom(0b1010111, 2);
+
+    if (Wire.available()) {
+      for (_i = 0; _i <2; _i++)
+        aux[_i] = Wire.read();    // receive a byte as character
+    }
+  
+   Serial.println(aux[0]);
+   Serial.println(aux[1]);
+
+  return (2 * (256 * aux[0] + aux[1]));
+}
+
+// ----------------------------------
+//                SETUP
+// ----------------------------------
+
+void setup() {
+  Wire.begin();
+  Serial.begin(9600);
+  initDisplay();
+  initKeyboard();
+
+  // Contador para interrupcao: base de tempo de 50 ms
+  Timer3.initialize(BASE_TEMPO_TIMER * 1000); //tempo em us
+  Timer3.attachInterrupt(cronometro);
+
+  dataloggerState = OCIOSO;
+  analogReference(INTERNAL1V1);
+}
+
+// ----------------------------------
+//            LOOP PRINCIPAL
+// ----------------------------------
+
+void loop() {
+  int _keyPressed;
+
+  _keyPressed =  poolingLines();
+  
+  if (_keyPressed == 1) {
     Wire.beginTransmission(0b1010111); // transmit to 24C16 (e paginacao 111)
-    Wire.write(0xFD);
-    Wire.write(0xFF);
+    Wire.write(0xFE);
+    Wire.write(0x00);
+    Wire.write(0x00);
     Wire.endTransmission();
   }
 
-  Wire.beginTransmission(0b1010111); // transmit to 24C16 (e paginacao 111)
-  Wire.write(0xFD);
-  Wire.endTransmission();
+  if (_keyPressed == 2) {
+    Wire.beginTransmission(0b1010111); // transmit to 24C16 (e paginacao 111)
+    Wire.write(0xFE);
+    Wire.write(0xFF);
+    Wire.write(0xF0);
+    Wire.endTransmission();
+  }
+  
+//  Wire.beginTransmission(0b1010111); // transmit to 24C16 (e paginacao 111)
+//  Wire.write(0xFD);
+//  Wire.endTransmission();
 
   //Wire.requestFrom(0b1010111);
 
-  usedSpace();
-
+  if(flagTimer){
+    unsigned int teste =usedSpace();
+    Serial.println(teste,BIN);
+    Serial.println("--------------"); 
+    flagTimer = 0;
+  }
   //Serial.println(buttonStateNew);
   //Serial.println(teste);
-  Serial.println("--------------");
+  
 
   /*
     teste0 = analogRead(A0);
@@ -183,7 +244,7 @@ void loop() {
           break;
     }
   */
-  delay(1000);
+  //delay(1000);
 
   /*
 
