@@ -36,10 +36,10 @@ int colVect[3] = {keyPinC1, keyPinC2, keyPinC3};
 char keyValue[4][3] = {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}, {10, 11, 12}};
 
 // Maquinas de estado
-enum {OCIOSO, SAMPLING, TRANSFERING, CLEARMEM, MEMREAD, PRINT} dataloggerState, dataloggerStateNext; // estado do programa
+enum {OCIOSO, SAMPLING, TRANSFERING, CLEARMEM, MEMREAD} dataloggerState, dataloggerStateNext; // estado do programa
 enum {MEASURE, STATUS, CONFIRM, SERIALREAD} displayState, displayStateOld; // estado do display NOKIA 5110
 String nextStateName[5] = {"Clear MEM.", "Init. Sampl.", "End. Sampl.", "Transfer Data", "Serial Trsf."};
-String statusName[2] = {"Idle", "Splng"};
+String statusName[3] = {"Idle", "Splng", "C&W"};
 volatile int statusIdx, nextStateIdx; // Variaveis para indicar escolhas no display
 
 // Variaveis para base de tempo
@@ -275,7 +275,7 @@ void loop() {
   int _keyPressed, aux, tempMeas, auxPrintSerial;
   unsigned int usedData, usedMem;
   unsigned char serialPrintAux[2];
-  static char flagConfirm = 1;
+  static char flagConfirm = 1, collectAndWrite = 0;
 
   _keyPressed =  poolingLines(); // Valor pressionado do teclado (ja com debounce)
 
@@ -333,6 +333,10 @@ void loop() {
     flagTimer1 = 0;
   }
 
+  if (_keyPressed == 8) {
+    collectAndWrite = collectAndWrite ^ 1;
+  }
+
   // Maquina de estados do datalogger
   switch (dataloggerState) {
     case OCIOSO: // Estado em idle (padrao)
@@ -355,7 +359,11 @@ void loop() {
       }
       break;
     case SAMPLING: // Coletando amostras periodicas
-      statusIdx = 1;
+      if (collectAndWrite == 1) // Indica no display em qual modo esta (ler e mandar para memoria)
+        statusIdx = 2;
+      else // ou ler e deixar em um buffer interno
+        statusIdx = 1;
+
       if (flagTimer0) { // Realiza leitura a cada 1 segundo
         if (usedBuffer < BUFFER_SIZE) {
           aux = analogRead(thermo) * 110 / 102.3;
@@ -366,21 +374,32 @@ void loop() {
         }
       }
 
+      // Se estiver no modo ler e escrever e o buffer estiver cheio, escrever na memoria
+      if ((collectAndWrite == 1) && (usedBuffer == BUFFER_SIZE)) {
+        dataloggerStateNext = TRANSFERING;
+        dataloggerState = TRANSFERING;
+      }
+
       // Transicao de estado
       if (_keyPressed == 5) {// finaliza coleta periodica
         dataloggerStateNext = OCIOSO;
         nextStateIdx = 2;
       }
       break;
-    case TRANSFERING: // Transferindo dados para memoria
-      transferBlockData(); // Transfere dados do buffer para memoria
-      delay(10); // Tempo para transmissao de todos os dados (necessario para ler memoria corretamente)
-      updateUsedSpace(); //Atualiza espaco usado
-      usedBuffer = 0; // Zera contador do buffer interno
+    case TRANSFERING:         // Transferindo dados para memoria
+      transferBlockData();    // Transfere dados do buffer para memoria
+      delay(10);            // Tempo para transmissao de todos os dados (necessario para ler memoria corretamente)
+      updateUsedSpace();      //Atualiza espaco usado
+      usedBuffer = 0;         // Zera contador do buffer interno
 
       // Transicao de estado
-      dataloggerState = OCIOSO;
-      dataloggerStateNext = OCIOSO;
+      if (collectAndWrite == 0) {       // Se nao estiver no modo ler e mandar para memoria
+        dataloggerState = OCIOSO;       // volta para modo ocioso
+        dataloggerStateNext = OCIOSO;
+      } else if (collectAndWrite == 1) {  // Se estiver
+        dataloggerState = SAMPLING;       // Volta a coletar dados
+        dataloggerStateNext = SAMPLING;
+      }
       break;
     case CLEARMEM: // Apaga contador da memoria
       Wire.beginTransmission(0b1010111); // transmit to 24C16 (e paginacao 111)
@@ -396,10 +415,10 @@ void loop() {
       display.println("Printing");
       display.println("on Serial");
       display.display();
-      
+
       usedMem = usedSpace(); // Ve quantidade de memoria usada
       Wire.beginTransmission(0b1010000); // Dummy write para comeco da memoria
-      Wire.write(0x00);                   
+      Wire.write(0x00);
       Wire.endTransmission();
 
       Wire.requestFrom(0b1010000, usedMem); // Pede todos os dados coletados
@@ -412,9 +431,9 @@ void loop() {
         }
         auxPrintSerial = (serialPrintAux[0] << 8) + serialPrintAux[1];
 
-        Serial.print(auxPrintSerial/10); // Impressao da temperatura
+        Serial.print(auxPrintSerial / 10); // Impressao da temperatura
         Serial.print('.');
-        Serial.println(auxPrintSerial%10);
+        Serial.println(auxPrintSerial % 10);
       }
       dataloggerState = OCIOSO; // Volta para estado ocioso
       dataloggerStateNext = OCIOSO;
