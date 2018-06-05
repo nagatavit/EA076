@@ -50,7 +50,6 @@ int count = 0;
 volatile int usedBuffer = 0, buffer_data[BUFFER_SIZE], thermometerRead, memoryread[2048];
 
 Adafruit_PCD8544 display = Adafruit_PCD8544(DC_display, CS_display, reset_display); //criacao do objeto display
-//criacao do objeto display
 
 // ----------------------------------
 //          INICIALIZACOES
@@ -215,7 +214,6 @@ void updateUsedSpace() {
 /*
    Realiza a transferencia de dados do buffer do arduino
    para memoria 24c16
-   para memoria 24C16
 */
 
 void transferBlockData() {
@@ -224,6 +222,9 @@ void transferBlockData() {
   byte teste;
 
   while (counter < usedBuffer) {
+    if (spaceTemp == 2046) // Roll over para posicao zero da memoria
+      spaceTemp = 0;
+
     aux = (spaceTemp & 0x700) >> 8;
     aux = 0b1010000 | aux;
     Wire.beginTransmission(aux);
@@ -256,10 +257,6 @@ void setup() {
   Serial.begin(9600);
   initDisplay();
   initKeyboard();
-  Wire.begin();//inicializa o Wire
-  Serial.begin(9600); //inicializa a porta serial
-  initDisplay(); //inicializa o display
-  initKeyboard(); //inicializa o teclado matricial
 
   // Contador para interrupcao: base de tempo de 50 ms
   Timer3.initialize(BASE_TEMPO_TIMER * 1000); //time in us
@@ -422,7 +419,6 @@ void loop() {
       display.println("on Serial");
       display.display();
 
-
       usedMem = usedSpace(); // Ve quantidade de memoria usada
       Wire.beginTransmission(0b1010000); // Dummy write para comeco da memoria
       Wire.write(0x00);
@@ -437,7 +433,6 @@ void loop() {
           }
         }
         auxPrintSerial = (serialPrintAux[0] << 8) + serialPrintAux[1];
-
 
         Serial.print(auxPrintSerial / 10); // Impressao da temperatura
         Serial.print('.');
