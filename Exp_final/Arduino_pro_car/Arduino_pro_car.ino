@@ -1,4 +1,3 @@
-//#include <SoftwareSerial.h>
 #include <Ultrasonic.h>
 
 #define pinUpDown1 8
